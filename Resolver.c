@@ -19,152 +19,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #define max(a, b) ((a) > (b) ? (a) : (b))
-
 #define DNS_MAXMSG 512
-#define MAX_NS 8
-#define RES_ANSWER 0
-#define RES_REFERRAL 1
-#define TTL_DEFAULT 60
-
-static char uri[512]="./uri";
-static int lookup_A_byname(const char *name, unsigned char ip[4]);
-static int lookup(const char *qname, unsigned char ip[4],char *zone, size_t zonesz, char ns[MAX_NS][MAX_NAME], int *nns);
-
-static int buildResponse(const  char *q, int qlen,  char *r, int rmax) {
-    char domainReq[MAX_NAME], uriNome[MAX_NAME], nsArray[MAX_NS][MAX_NAME];
-    unsigned char addr[4], rawData[MAX_NAME];
-    int offsetReq, count = 0, searchRes;
-    uint16_t typeReq, classReq;
-
-    unsigned char *reqBuf = (unsigned char *)q;
-    unsigned char *resBuf = (unsigned char *)r;
-    int reqLen = qlen;
-    int maxResLen = rmax;
-
-    if (reqLen < 12 || maxResLen < 12 || reqBuf[2] & 0x80) 
-        return -1;
-
-    memcpy(resBuf, reqBuf, 12);
-    resBuf[2] = (unsigned char)(0x80 | (reqBuf[2] & 0x01)); 
-    resBuf[3] = 0x00;
-    put16(resBuf+6, 0);
-    put16(resBuf+8, 0);
-    put16(resBuf+10, 0);
-
-    if (get16(reqBuf+4) != 1) { 
-        put16(resBuf+4, 0); 
-        resBuf[3] = RC_FORMERR; 
-        return 12; 
-    }
-
-    offsetReq = parseNameDNS(reqBuf, reqLen, 12, domainReq, sizeof(domainReq));
-
-    if (offsetReq < 0 || offsetReq+4 > reqLen) { 
-        put16(resBuf+4, 0); 
-        resBuf[3] = RC_FORMERR; 
-        return 12; 
-    }
-    typeReq = get16(reqBuf+offsetReq);
-    classReq = get16(reqBuf+offsetReq+2);
-    offsetReq += 4;
-
-    if (offsetReq > maxResLen) 
-        return -1;
-    memcpy(resBuf, reqBuf, (size_t)offsetReq);
-    resBuf[2] = (unsigned char)(0x80 | (reqBuf[2] & 0x01));
-    resBuf[3] = 0x00;
-    put16(resBuf+4, 1);
-    put16(resBuf+6, 0);
-    put16(resBuf+8, 0);
-    put16(resBuf+10, 0);
-
-    printf("  query %s type=%u\n", domainReq[0] ? domainReq : ".", typeReq);
-
-    if (classReq != C_IN || (typeReq != T_A && typeReq != T_NS)) {
-        resBuf[3] = RC_NOTIMP;
-        return offsetReq;
-    }
-    searchRes = lookup(domainReq, addr, uriNome, sizeof(uriNome), nsArray, &count);
-
-    if (searchRes == RES_ANSWER) {
-        resBuf[2] |= 0x04;
-        resBuf[offsetReq++] = 0xC0;
-        resBuf[offsetReq++] = 0x0C;
-        put16(resBuf+offsetReq, T_A);
-         offsetReq += 2;
-        put16(resBuf+offsetReq, C_IN);
-         offsetReq += 2;
-        put32(resBuf+offsetReq, TTL_DEFAULT); 
-        offsetReq += 4;
-        put16(resBuf+offsetReq, 4);
-         offsetReq += 2;
-        memcpy(resBuf+offsetReq, addr, 4);
-         offsetReq += 4;
-        put16(resBuf+6, 1);
-        printf("  -> ANSWER %u.%u.%u.%u (autoritativa)\n", addr[0], addr[1], addr[2], addr[3]);
-        return offsetReq;
-    }
-
-    if (searchRes == RES_REFERRAL) {
-        int auth_count = 0, add_count = 0;
-        int new_offset;
-           int rdata_length;
-        for (int idx = 0; idx < count; idx++) {
-            rdata_length = encodeNameDNS(nsArray[idx], rawData, (int)sizeof(rawData));
-    
-            if (rdata_length < 0) 
-                continue;
-            new_offset = writeDNS(resBuf, offsetReq, maxResLen, uriNome, T_NS, TTL_DEFAULT, rawData, rdata_length);
-            if (new_offset < 0) 
-                break;
-            offsetReq = new_offset;
-            auth_count++;
-        }
-         unsigned char glue_ip[4];
-    
-        for (int idx = 0; idx < count; idx++) {
-            if (!lookup_A_byname(nsArray[idx], glue_ip)) 
-                continue;
-            new_offset = writeDNS(resBuf, offsetReq, maxResLen, nsArray[idx], T_A, TTL_DEFAULT, glue_ip, 4);
-            if (new_offset < 0) 
-                break;
-            offsetReq = new_offset;
-            add_count++;
-            printf("  -> REFERRAL a %s (%u.%u.%u.%u) per la zona %s\n", nsArray[idx], glue_ip[0], glue_ip[1], glue_ip[2], glue_ip[3], uriNome);
-        }
-        put16(resBuf+8, (uint16_t)auth_count);
-        put16(resBuf+10, (uint16_t)add_count);
-        if (add_count == 0)
-            printf("  -> REFERRAL per la zona %s (senza glue)\n", uriNome);
-        return offsetReq;
-    }
-
-    resBuf[2] |= 0x04;
-    resBuf[3] = RC_NXDOMAIN;
-    printf("  -> NXDOMAIN\n");
-    return offsetReq;
-}
-
-static int readN(int fd, unsigned char *buf, int n) {
-    int count = 0;
-    while(count<n){
-        int k=read(fd, buf+count, (size_t)(n-count));
-        if(k==0)
-        return count;
-        if(k<0){
-            if (errno== EINTR)
-            continue;
-            return -1;
-        }
-        count+=k;
-    }
-    return count;
-}
-
-void gestore(int signo){
-    int stato;
-    while (waitpid(-1, &stato, WNOHANG) > 0);
-}
 
 int main(int argc, char **argv) {
      unsigned char query[DNS_MAXMSG], resp[DNS_MAXMSG], prefix[2];
@@ -191,7 +46,6 @@ if (argc < 3 || argc > 4) {
         printf("Porta scorretta...\n");
         exit(2);
     }
-    snprintf(uri, sizeof(uri), "%s", argv[2]);
     memset((char *)&servaddr, 0, sizeof(struct sockaddr_in));
     servaddr.sin_family = AF_INET;
     servaddr.sin_port =htons(port);
@@ -239,7 +93,6 @@ if (argc < 3 || argc > 4) {
         exit(EXIT_FAILURE);
     }
 
-    signal(SIGCHLD, gestore);
     FD_ZERO(&rset);
     maxfdp1 = max(listenfd, udpfd)+1;
     printf("inizio del demone\n");
