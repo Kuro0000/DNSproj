@@ -25,21 +25,87 @@
 #define RES_ANSWER 0
 #define RES_REFERRAL 1
 #define TTL_DEFAULT 60
+#define MAX_LABEL 64
 
 static char uri[512]="./uri";
-static int lookup_A_byname(const char *name, unsigned char ip[4]);
+
+static int node_path(char labels[MAX_LABEL][MAX_LABEL], int n, int from, char *out, size_t outsz) {
+    int used = snprintf(out, outsz, "%s", uri);
+
+    for (int i = n - 1; i >= from; i--) {
+        int w = snprintf(out+used, outsz - (size_t)used, "/%s", labels[i]);
+        if (w < 0 || (size_t)(used+w) >= outsz) return -1;
+        used += w;
+    }
+    return used;
+}
+static int lookup_A_byname(const char *name, unsigned char ip[4]){
+    char labels[MAX_LABEL][MAX_LABEL], path[1024], line[64];
+    int n = 0;
+    struct in_addr addr;
+    const char *p = name;
+
+    while (*p) {
+        const char *dot = strchr(p, '.');
+        int l = dot ? (int)(dot - p) : (int)strlen(p);
+
+        if (l == 0) { 
+            p = dot ? dot+1 : p+l;
+             continue; 
+        }
+        if (l >= MAX_LABEL || n >= MAX_LABEL) 
+            return -1;
+
+        memcpy(labels[n], p, (size_t)l);
+        labels[n][l] = '\0';
+        for (int i = 0; i < l; i++)
+            labels[n][i] = (char)tolower((unsigned char)labels[n][i]);
+        n++;
+        p = dot ? dot+1 : p+l;
+    }
+
+    if (n < 0)
+        return 0;
+    if (node_path(labels, n, 0, path, sizeof(path)) < 0) 
+        return 0;
+    if (strlen(path)+3 >= sizeof(path))
+        return 0;
+    strcat(path, "/A");
+    int fd = open(path, O_RDONLY);
+    char ch;
+    int i = 0;
+    if (fd < 0)
+     return 0;
+
+    while ((n = read(fd, &ch, 1)) > 0) {
+        if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') {
+            break;
+        }
+        if (i < sizeof(line) - 1) {
+            line[i++] = ch;
+        } else {
+            break;
+        }
+    }
+    
+    close(fd);
+    
+    if (i == 0) 
+        return 0;
+    line[i] = '\0';
+    if (inet_pton(AF_INET, line, &addr) != 1) 
+        return 0;
+    memcpy(ip, &addr.s_addr, 4);
+    
+    return 1;
+}
 static int lookup(const char *qname, unsigned char ip[4],char *zone, size_t zonesz, char ns[MAX_NS][MAX_NAME], int *nns);
 
-static int buildResponse(const  char *q, int qlen,  char *r, int rmax) {
+static int buildResponse(const  char *reqBuf, int reqLen,  char *resBuf, int maxResLen) {
     char domainReq[MAX_NAME], uriNome[MAX_NAME], nsArray[MAX_NS][MAX_NAME];
     unsigned char addr[4], rawData[MAX_NAME];
     int offsetReq, count = 0, searchRes;
     uint16_t typeReq, classReq;
-
-    unsigned char *reqBuf = (unsigned char *)q;
-    unsigned char *resBuf = (unsigned char *)r;
-    int reqLen = qlen;
-    int maxResLen = rmax;
 
     if (reqLen < 12 || maxResLen < 12 || reqBuf[2] & 0x80) 
         return -1;
