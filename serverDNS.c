@@ -1,3 +1,5 @@
+#include "dns.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -20,13 +22,27 @@
 
 #define DNS_MAXMSG 512
 
-static char zone_root[512]="./zone";
+static char zoneRoot[512]="./zone";
 
-static int build_response(const  char *q, int qlen,  char *r, int rmax) {
+static int buildResponse(const  char *q, int qlen,  char *r, int rmax) {
     //DA FARE
 }
 
-
+static int readN(int fd, unsigned char *buf, int n) {
+    int count = 0;
+    while(count<n){
+        int k=read(fd, buf+count, (size_t)(n-count));
+        if(k==0)
+        return count;
+        if(k<0){
+            if (errno== EINTR)
+            continue;
+            return -1;
+        }
+        count+=k;
+    }
+    return count;
+}
 
 void gestore(int signo){
     int stato;
@@ -34,8 +50,8 @@ void gestore(int signo){
 }
 
 int main(int argc, char **argv) {
-     char query[DNS_MAXMSG], resp[DNS_MAXMSG];
-    int listenfd, connfd, udpfd, maxfdp1, port, nread, nready;
+     unsigned char query[DNS_MAXMSG], resp[DNS_MAXMSG], prefix[2];
+    int listenfd, connfd, udpfd, maxfdp1, port, nread, nready, qlun;
     const int on = 1;
     fd_set rset;
     socklen_t len;
@@ -58,7 +74,7 @@ if (argc < 3 || argc > 4) {
         printf("Porta scorretta...\n");
         exit(2);
     }
-    snprintf(zone_root, sizeof(zone_root), "%s", argv[2]);
+    snprintf(zoneRoot, sizeof(zoneRoot), "%s", argv[2]);
     memset((char *)&servaddr, 0, sizeof(struct sockaddr_in));
     servaddr.sin_family = AF_INET;
     servaddr.sin_port =htons(port);
@@ -136,13 +152,25 @@ if (argc < 3 || argc > 4) {
             if (fork() == 0) {
                 close(listenfd);
                 close(udpfd);
-                    //MODIFICA
+                    for(;;){
+                            if(readN(connfd, prefix, 2) != 2){
+                                break;
+                            }
+                            qlun=get16(prefix);
+                            if (qlun <= 0 || qlun > (int)sizeof(query) || readN(connfd, query, qlun) != qlun) 
+                                break;
 
+                            int rlen = buildResponse(query, qlun, resp+2, (int)sizeof(resp) - 2);
+                            if (rlen < 0) 
+                                break;
+                            put16(resp, (uint16_t)rlen);
+                            if (write(connfd, resp, (size_t)rlen+2) < 0) 
+                                break;
+                    }
                 close(connfd);
                 exit(EXIT_SUCCESS);
             }
-            shutdown(connfd, 0);
-            shutdown(connfd,1);
+
             close(connfd);
         }
         //-----------------------------------------------------------------------------------------
@@ -155,7 +183,7 @@ if (argc < 3 || argc > 4) {
             } else {
                 printf("[UDP] %s:%d\n", inet_ntoa(cliaddr.sin_addr),
                        ntohs(cliaddr.sin_port));
-                int rlen = build_response(query, nread, resp, (int)sizeof(resp));
+                int rlen = buildResponse(query, nread, resp, (int)sizeof(resp));
                 if (rlen > 0) {
                     if (sendto(udpfd, resp, (size_t)rlen, 0,(struct sockaddr *)&cliaddr, len) < 0)
                         perror("sendto");
