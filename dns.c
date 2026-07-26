@@ -21,8 +21,42 @@ void put32(unsigned char *p, uint32_t v) {
     p[3] = (unsigned char)(v);
 }
 int parseNameDNS(const unsigned char *msg, int len, int off, char *out, size_t outsz){
-    
-    return 0;
+    int jumped = 0, after = -1, n = 0, hops = 0;
+
+    if (outsz == 0) 
+        return -1;
+    out[0] = '\0';
+    while (off >= 0 && off < len) {
+        unsigned l = msg[off];
+        if ((l & 0xC0) == 0xC0) {   
+            if (off+1 >= len) 
+                return -1;
+            if (!jumped) after = off+2;
+            jumped = 1;
+            off = (int)(((l & 0x3F) << 8) | msg[off+1]);
+            if (++hops > 15) 
+                return -1;         
+            continue;
+        }
+        if (l & 0xC0) 
+            return -1;      
+
+        if (l == 0) {          
+            if (!jumped) 
+                after = off+1;
+            out[n] = '\0';
+            return after;
+        }
+        if (off+1+(int)l > len || (size_t)(n+(int)l+2) > outsz) 
+            return -1;
+
+        for (unsigned i = 0; i < l; i++)
+            out[n++] = (char)tolower(msg[off+1+i]);
+        out[n++] = '.';
+
+        off += 1+(int)l;
+    }
+    return -1;
 }
 
 int encodeNameDNS(const char *name, unsigned char *buf, int max){
