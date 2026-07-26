@@ -24,10 +24,43 @@
 #define MAX_NS 8
 #define RES_ANSWER 0
 #define RES_REFERRAL 1
+#define RES_NXDOMAIN 2
 #define TTL_DEFAULT 60
 #define MAX_LABEL 64
 
 static char uri[512]="./uri";
+
+static int read_lines(const char *path, char out[][MAX_NAME], int maxlines) {
+    int fd = open(path, O_RDONLY);
+    char line[MAX_NAME];
+    char ch;
+    int n = 0, i = 0;
+    int bytes_read;
+    if (fd < 0) 
+        return 0;
+
+    while (n < maxlines && (bytes_read = read(fd, &ch, 1)) > 0) {
+        if (ch == '\n') {
+            if (i > 0) {
+                line[i] = '\0';
+                if (line[0] != '#') { sprintf(out[n], "%s", line); n++; }
+                i = 0;
+            }
+            continue;
+        }
+        if (i < MAX_NAME - 1) line[i++] = ch;
+    }
+    if (n < maxlines && i > 0) {
+        line[i] = '\0';
+        if (line[0] != '#') {
+            sprintf(out[n], "%s", line);
+            n++;
+        }
+    }
+
+    close(fd);
+    return n;
+}
 
 static int node_path(char labels[MAX_LABEL][MAX_LABEL], int n, int from, char *out, size_t outsz) {
     int used = snprintf(out, outsz, "%s", uri);
@@ -43,25 +76,23 @@ static int lookup_A_byname(const char *name, unsigned char ip[4]){
     char labels[MAX_LABEL][MAX_LABEL], path[1024], line[64];
     int n = 0;
     struct in_addr addr;
-    const char *p = name;
-
-    while (*p) {
-        const char *dot = strchr(p, '.');
-        int l = dot ? (int)(dot - p) : (int)strlen(p);
+    while (*name) {
+        const char *dot = strchr(name, '.');
+        int l = dot ? (int)(dot - name) : (int)strlen(name);
 
         if (l == 0) { 
-            p = dot ? dot+1 : p+l;
+            name = dot ? dot+1 : name+l;
              continue; 
         }
         if (l >= MAX_LABEL || n >= MAX_LABEL) 
             return -1;
 
-        memcpy(labels[n], p, (size_t)l);
+        memcpy(labels[n], name, (size_t)l);
         labels[n][l] = '\0';
         for (int i = 0; i < l; i++)
             labels[n][i] = (char)tolower((unsigned char)labels[n][i]);
         n++;
-        p = dot ? dot+1 : p+l;
+        name = dot ? dot+1 : name+l;
     }
 
     if (n < 0)
@@ -99,9 +130,61 @@ static int lookup_A_byname(const char *name, unsigned char ip[4]){
     
     return 1;
 }
-static int lookup(const char *qname, unsigned char ip[4],char *zone, size_t zonesz, char ns[MAX_NS][MAX_NAME], int *nns);
+static int lookup(const char *name, unsigned char ip[4],char *uriIn, size_t urisz, char ns[MAX_NS][MAX_NAME], int *nns){
+    char labels[MAX_LABEL][MAX_LABEL], path[1024], nspath[1100];
+    int n = 0, w;
+    int used;
+    const char *tempName= name;
 
-static int buildResponse(const  char *reqBuf, int reqLen,  char *resBuf, int maxResLen) {
+    while (*tempName) {
+        const char *dot = strchr(tempName, '.');
+        int l = dot ? (int)(dot - tempName) : (int)strlen(tempName);
+
+        if (l == 0) { 
+            tempName = dot ? dot+1 : tempName+l;
+             continue; 
+        }
+        if (l >= MAX_LABEL || n >= MAX_LABEL) 
+            return -1;
+
+        memcpy(labels[n], tempName, (size_t)l);
+        labels[n][l] = '\0';
+        for (int i = 0; i < l; i++)
+            labels[n][i] = (char)tolower((unsigned char)labels[n][i]);
+        n++;
+        tempName = dot ? dot+1 : tempName+l;
+    }
+    if (n<=0)
+     return RES_NXDOMAIN; 
+    used = sprintf(path, "%s", uri);
+
+    for (int i = n - 1; i >= 0; i--) {
+
+
+        w = sprintf(path+used, "/%s", labels[i]);
+        if (w < 0 || (size_t)(used+w) >= sizeof(path)) 
+            return RES_NXDOMAIN;
+        used += w;
+        sprintf(nspath, "%s/NS", path);
+
+        *nns = read_lines(nspath, ns, MAX_NS);
+        if (*nns > 0) {
+
+            if (i > 0 || lookup_A_byname(name, ip) == 0) {
+                int off = 0;
+                uriIn[0] = '\0';
+                for (int k = i; k < n; k++)
+                    off += snprintf(uriIn+off, urisz - (size_t)off, "%s.", labels[k]);
+                return RES_REFERRAL;
+            }
+        }
+    }
+    if (lookup_A_byname(name, ip)) 
+        return RES_ANSWER;
+    return RES_NXDOMAIN;
+}
+
+static int buildResponse(const unsigned char *reqBuf, int reqLen,  char unsigned *resBuf, int maxResLen) {
     char domainReq[MAX_NAME], uriNome[MAX_NAME], nsArray[MAX_NS][MAX_NAME];
     unsigned char addr[4], rawData[MAX_NAME];
     int offsetReq, count = 0, searchRes;
