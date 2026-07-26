@@ -20,8 +20,15 @@ void put32(unsigned char *p, uint32_t v) {
     p[2] = (unsigned char)(v >> 8);
     p[3] = (unsigned char)(v);
 }
-int parseNameDNS(const unsigned char *msg, int len, int off, char *out, size_t outsz);
+int parseNameDNS(const unsigned char *msg, int len, int off, char *out, size_t outsz){
+    
+    return 0;
+}
 
-int encodeNameDNS(const char *name, unsigned char *buf, int max);
-int writeDNS(unsigned char *msg, int off, int max, const char *name,uint16_t type, uint32_t ttl,const unsigned char *rdata, int rdlen);
+int encodeNameDNS(const char *name, unsigned char *buf, int max){
+    return 0;
+}
+int writeDNS(unsigned char *msg, int off, int max, const char *name,uint16_t type, uint32_t ttl,const unsigned char *rdata, int rdlen) {
+    return 0;
+}
 
