@@ -1,0 +1,34 @@
+services:
+  root:
+    build: .
+    container_name: dns-root
+    command: serverDNS 53 /uri
+    volumes: [./uri/root:/uri:ro]
+    networks:
+      dnsnet:
+        ipv4_address: 172.28.0.10
+
+  tld:
+    build: .
+    container_name: dns-tld
+    command: serverDNS 53 /uri
+    volumes: [./uri/tld:/uri:ro]
+    networks:
+      dnsnet:
+        ipv4_address: 172.28.0.11
+
+  auth:
+    build: .
+    container_name: dns-auth
+    command: serverDNS 53 /uri
+    volumes: [./uri/auth:/uri:ro]
+    networks:
+      dnsnet:
+        ipv4_address: 172.28.0.12
+
+networks:
+  dnsnet:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
