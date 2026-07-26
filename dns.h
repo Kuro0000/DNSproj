@@ -4,6 +4,7 @@
 #define T_NS 2
 #define T_CNAME 5
 #define C_IN 1
+#define MAX_LABEL 64
 #define MAX_NAME 256
 #define RC_NOERROR 0
 #define RC_FORMERR 1

@@ -26,7 +26,6 @@
 #define RES_REFERRAL 1
 #define RES_NXDOMAIN 2
 #define TTL_DEFAULT 60
-#define MAX_LABEL 64
 
 static char uri[512]="./uri";
 
