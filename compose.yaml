@@ -28,7 +28,7 @@ services:
 
   resolver:
     build: .
-    container_name: dns-resolver
+    container_name: resolver
     command: resolver 53 172.28.0.10 53   
     depends_on:
       - root
