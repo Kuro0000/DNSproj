@@ -195,9 +195,7 @@ static int buildResponse(const unsigned char *reqBuf, int reqLen,  char unsigned
     memcpy(resBuf, reqBuf, 12);
     resBuf[2] = (unsigned char)(0x80 | (reqBuf[2] & 0x01)); 
     resBuf[3] = 0x00;
-    put16(resBuf+6, 0);
-    put16(resBuf+8, 0);
-    put16(resBuf+10, 0);
+    memset(resBuf + 6, 0, 6);
 
     if (get16(reqBuf+4) != 1) { 
         put16(resBuf+4, 0); 
@@ -222,9 +220,7 @@ static int buildResponse(const unsigned char *reqBuf, int reqLen,  char unsigned
     resBuf[2] = (unsigned char)(0x80 | (reqBuf[2] & 0x01));
     resBuf[3] = 0x00;
     put16(resBuf+4, 1);
-    put16(resBuf+6, 0);
-    put16(resBuf+8, 0);
-    put16(resBuf+10, 0);
+    memset(resBuf + 6, 0, 6);
 
     printf("  query %s type=%u\n", domainReq[0] ? domainReq : ".", typeReq);
 
