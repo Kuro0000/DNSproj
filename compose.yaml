@@ -26,6 +26,33 @@ services:
       dnsnet:
         ipv4_address: 172.28.0.12
 
+  resolver:
+    build: .
+    container_name: dns-resolver
+    command: resolver 53 172.28.0.10 53   
+    depends_on:
+      - root
+      - tld
+      - auth
+    ports:
+      - "5354:53/udp"
+      - "5354:53/tcp"
+    networks:
+      dnsnet:
+        ipv4_address: 172.28.0.20
+
+  client:
+    image: alpine
+    container_name: dns-client
+    command: sh -c "apk add --no-cache bind-tools && tail -f /dev/null"
+    tty: true
+    stdin_open: true 
+    depends_on:
+      - resolver
+    networks:
+      dnsnet:
+        ipv4_address: 172.28.0.100
+
 networks:
   dnsnet:
     ipam:
