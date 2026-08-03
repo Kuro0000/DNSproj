@@ -28,7 +28,7 @@
 #define QUERY_RETRIES 2
 #define TTL_MIN 10
 static struct in_addr root_hint;
-static uint16_t port = 53;
+static uint16_t portaDNS = 53;
 
 int readDNS(const unsigned char *msg, int len, int off,char *name, size_t namesz, uint16_t *type, uint16_t *cls,uint32_t *ttl, int *rdoff, int *rdlen) {
     char scratch[MAX_NAME];
@@ -87,7 +87,7 @@ static int resolve(const char *name, uint16_t type, unsigned char ips[][4], int 
         put16(q + qlen + 2, C_IN); 
         qlen += 4;
         if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) >= 0) {
-            struct sockaddr_in to = { .sin_family = AF_INET, .sin_port = htons(port), .sin_addr = cur };
+            struct sockaddr_in to = { .sin_family = AF_INET, .sin_port = htons(portaDNS), .sin_addr = cur };
             for (int try = 0; try <= QUERY_RETRIES; try++) {
                 sendto(fd, q, qlen, 0, (struct sockaddr *)&to, sizeof(to));
                 
@@ -258,20 +258,12 @@ if (argc < 3 || argc > 4) {
         printf("Porta scorretta...\n");
         exit(2);
     }
+    inet_pton(AF_INET, "172.28.0.10", &root_hint);
     memset((char *)&servaddr, 0, sizeof(struct sockaddr_in));
     servaddr.sin_family = AF_INET;
     servaddr.sin_port =htons(port);
-
-    if (argc == 4) {
-
-        if (inet_pton(AF_INET, argv[3], &servaddr.sin_addr) != 1) {
-            printf("Indirizzo di bind non valido\n");
-            exit(2);
-        }
-    } else {
-        servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    }
-
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    
     printf("inizializzo le socket\n");
     listenfd = socket(AF_INET, SOCK_STREAM, 0);
     if (listenfd < 0) { 
@@ -323,13 +315,6 @@ if (argc < 3 || argc > 4) {
         // STREAM: esecuzione remota comando (output inviato al client)
         if (FD_ISSET(listenfd, &rset)) {
 
-            len = sizeof(cliaddr);
-            connfd = accept(listenfd, (struct sockaddr *)&cliaddr, &len);
-            if (connfd < 0) {
-                if (errno == EINTR) continue;
-                perror("accept");
-                continue;
-            }
             printf("[TCP] connessione da %s:%d\n", inet_ntoa(cliaddr.sin_addr),ntohs(cliaddr.sin_port));
             unsigned char prefix[2];
             len = sizeof(cliaddr);

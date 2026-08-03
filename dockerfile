@@ -6,4 +6,5 @@ RUN gcc -Wall -Wextra -O2 serverDNS.c dns.c -o serverDNS && gcc -Wall -Wextra -O
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
         dnsutils tcpdump && rm -rf /var/lib/apt/lists/*
-COPY --from=build /src/serverDNS /src/resolver /usr/local/bin/
+COPY --from=build /src/serverDNS /usr/local/bin/serverDNS
+COPY --from=build /src/resolver /usr/local/bin/resolver
