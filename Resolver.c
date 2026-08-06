@@ -109,6 +109,7 @@ static int resolve(const char *name, uint16_t type, unsigned char ips[][4], int 
         }
         int rcode = resp[3] & 0x0F, an = get16(resp + 6), ns = get16(resp + 8), ar = get16(resp + 10);
         char scratch[MAX_NAME];
+        off = 12;
         for (int i = 0; i < get16(resp + 4); i++) {
             off = parseNameDNS(resp, rlen, off, scratch, sizeof(scratch));
             if (off < 0 || off+4 > rlen) return -1;
@@ -263,7 +264,7 @@ if (argc < 3 || argc > 4) {
     servaddr.sin_family = AF_INET;
     servaddr.sin_port =htons(port);
     servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    
+
     printf("inizializzo le socket\n");
     listenfd = socket(AF_INET, SOCK_STREAM, 0);
     if (listenfd < 0) { 
