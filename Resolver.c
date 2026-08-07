@@ -18,6 +18,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <time.h>
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define DNS_MAXMSG 512
 #define MAX_STEPS 16  
@@ -86,7 +87,9 @@ int readDNS(const unsigned char *msg, int len, int off,char *name, size_t namesz
 static int resolve(const char *name, uint16_t type, unsigned char ips[][4], int *nips, uint32_t *ttl, int depth) {
     if (depth > MAX_DEPTH) 
         return RC_SERVFAIL;
-    if (cacheGet(name, type, ips, nips) == 1) {
+    *nips = 0;
+    *ttl  = TTL_MIN;
+    if (cacheGet(name, type, ips, nips)) {
         return RC_NOERROR;
     }
      
