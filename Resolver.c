@@ -30,6 +30,17 @@
 static struct in_addr root_hint;
 static uint16_t portaDNS = 53;
 
+
+static int cacheGet(){
+    return 0;
+}
+
+static int cachePut(){
+    return 0;
+}
+
+
+
 int readDNS(const unsigned char *msg, int len, int off,char *name, size_t namesz, uint16_t *type, uint16_t *cls,uint32_t *ttl, int *rdoff, int *rdlen) {
     char scratch[MAX_NAME];
     int rl;
