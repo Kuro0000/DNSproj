@@ -27,16 +27,26 @@
 #define QUERY_TIMEOUT 3  
 #define QUERY_RETRIES 2
 #define TTL_MIN 10
+#define CACHE_SIZE 64
 static struct in_addr root_hint;
 static uint16_t portaDNS = 53;
+struct cache_entry {
+    char name[MAX_NAME];
+    uint16_t type;
+    unsigned char ips[MAX_IPS][4];
+    int nips;
+    time_t expires;
+};
 
+static struct cache_entry cache[CACHE_SIZE];
 
-static int cacheGet(){
+static int cacheGet(const char *name, uint16_t type, unsigned char ips[][4], int *nips){
+
     return 0;
 }
 
-static int cachePut(){
-    return 0;
+static void cachePut(const char *name, uint16_t type, unsigned char ips[][4], int nips, uint32_t ttl){
+
 }
 
 
@@ -74,19 +84,29 @@ int readDNS(const unsigned char *msg, int len, int off,char *name, size_t namesz
 
 
 static int resolve(const char *name, uint16_t type, unsigned char ips[][4], int *nips, uint32_t *ttl, int depth) {
-    if (depth > MAX_DEPTH) return RC_SERVFAIL;
+    if (depth > MAX_DEPTH) 
+        return RC_SERVFAIL;
+    if (cacheGet(name, type, ips, nips) == 1) {
+        return RC_NOERROR;
+    }
      
     struct in_addr cur = root_hint;
     *nips = 0;
     *ttl = TTL_MIN;
-
+    unsigned char q[DNS_MAXMSG], resp[DNS_MAXMSG];
+    char nslist[MAX_NS][MAX_NAME], rname[MAX_NAME], scratch[MAX_NAME];;
+    uint16_t id, rtype;
+    uint32_t rttl;
+    int rlen, qlen, off, rdoff, rdlen, nns, found_glue, fd;
+    int rcode, an, ns, ar;
+    unsigned char nsip[MAX_IPS][4];
+    int nn;
+    uint32_t nttl;
+    fd_set rs; 
     for (int step = 0; step < MAX_STEPS; step++) {
-        unsigned char q[DNS_MAXMSG], resp[DNS_MAXMSG];
-        char nslist[MAX_NS][MAX_NAME], rname[MAX_NAME];
-        uint16_t id = rand() & 0xFFFF, rtype;
-        uint32_t rttl;
-        int rlen = -1, qlen = 12, off, rdoff, rdlen;
-        int nns = 0, found_glue = 0, fd;
+        id = rand() & 0xFFFF;
+        rlen = -1, qlen = 12;
+        nns = 0, found_glue = 0;
 
         printf("%*s[passo %d] interrogo %s per %s\n", depth * 2, "", step + 1, inet_ntoa(cur), name);
         memset(q, 0, 12);
@@ -102,7 +122,7 @@ static int resolve(const char *name, uint16_t type, unsigned char ips[][4], int 
             for (int try = 0; try <= QUERY_RETRIES; try++) {
                 sendto(fd, q, qlen, 0, (struct sockaddr *)&to, sizeof(to));
                 
-                fd_set rs; FD_ZERO(&rs); FD_SET(fd, &rs);
+                FD_ZERO(&rs); FD_SET(fd, &rs);
                 struct timeval tv = { .tv_sec = QUERY_TIMEOUT, .tv_usec = 0 };
                 
                 if (select(fd + 1, &rs, NULL, NULL, &tv) > 0) {
@@ -118,8 +138,8 @@ static int resolve(const char *name, uint16_t type, unsigned char ips[][4], int 
             printf("%*s  nessuna risposta\n", depth * 2, "");
             return RC_SERVFAIL;
         }
-        int rcode = resp[3] & 0x0F, an = get16(resp + 6), ns = get16(resp + 8), ar = get16(resp + 10);
-        char scratch[MAX_NAME];
+        rcode = resp[3] & 0x0F, an = get16(resp + 6), ns = get16(resp + 8), ar = get16(resp + 10);
+
         off = 12;
         for (int i = 0; i < get16(resp + 4); i++) {
             off = parseNameDNS(resp, rlen, off, scratch, sizeof(scratch));
@@ -138,6 +158,7 @@ static int resolve(const char *name, uint16_t type, unsigned char ips[][4], int 
         
         if (*nips > 0) {
             printf("%*s  risposta finale: %u.%u.%u.%u\n", depth * 2, "", ips[0][0], ips[0][1], ips[0][2], ips[0][3]);
+            cachePut(name, type, ips, *nips, *ttl);
             return RC_NOERROR;
         }
         if (rcode == RC_NXDOMAIN) {
@@ -171,9 +192,7 @@ static int resolve(const char *name, uint16_t type, unsigned char ips[][4], int 
             }
         }
         if (!found_glue) {
-            unsigned char nsip[MAX_IPS][4];
-            int nn = 0;
-            uint32_t nttl;
+            nn = 0;
             printf("%*s  glue assente, risolvo prima %s\n", depth * 2, "", nslist[0]);
             if (resolve(nslist[0], T_A, nsip, &nn, &nttl, depth + 1) != RC_NOERROR || nn == 0) {
                 return RC_SERVFAIL;
