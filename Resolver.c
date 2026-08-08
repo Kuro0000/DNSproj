@@ -41,13 +41,50 @@ struct cache_entry {
 
 static struct cache_entry cache[CACHE_SIZE];
 
-static int cacheGet(const char *name, uint16_t type, unsigned char ips[][4], int *nips){
-
+static int cacheGet(const char *name, uint16_t type, unsigned char ips[][4], int *nips, uint32_t *ttl){
+    time_t now = time(NULL);
+ 
+    for (int i = 0; i < CACHE_SIZE; i++) {
+        if (cache[i].nips == 0 || cache[i].expires <= now)
+            continue;
+        if (cache[i].type != type)
+            continue;
+        if (strcmp(cache[i].name, name) != 0)
+            continue;
+        *nips = cache[i].nips;
+        memcpy(ips, cache[i].ips, (size_t)cache[i].nips * 4);
+        *ttl = (uint32_t)(cache[i].expires - now); 
+        printf("  [cache] %s gia' noto (scade fra %us)\n", name, *ttl);
+        return 1;
+    }
     return 0;
 }
 
 static void cachePut(const char *name, uint16_t type, unsigned char ips[][4], int nips, uint32_t ttl){
-
+    time_t now = time(NULL);
+    int slot = -1, oldest = 0;
+ 
+    if (nips <= 0)
+        return;
+    if (ttl < TTL_MIN)
+        ttl = TTL_MIN;
+ 
+    for (int i = 0; i < CACHE_SIZE; i++) {
+        if (cache[i].nips == 0 || cache[i].expires <= now) {
+            slot = i;
+            break;
+        }
+        if (cache[i].expires < cache[oldest].expires)
+            oldest = i;
+    }
+    if (slot < 0)
+        slot = oldest;
+ 
+    snprintf(cache[slot].name, MAX_NAME, "%s", name);
+    cache[slot].type = type;
+    cache[slot].nips = nips > MAX_IPS ? MAX_IPS : nips;
+    memcpy(cache[slot].ips, ips, (size_t)cache[slot].nips * 4);
+    cache[slot].expires = now + (time_t)ttl;
 }
 
 
@@ -89,7 +126,7 @@ static int resolve(const char *name, uint16_t type, unsigned char ips[][4], int 
         return RC_SERVFAIL;
     *nips = 0;
     *ttl  = TTL_MIN;
-    if (cacheGet(name, type, ips, nips)) {
+    if (cacheGet(name, type, ips, nips, ttl)) {
         return RC_NOERROR;
     }
      
@@ -279,6 +316,7 @@ if (argc < 3 || argc > 4) {
         printf("Uso: %s porta percorso_zone [indirizzo_bind]\n", argv[0]);
         exit(1);
     }
+    setvbuf(stdout, NULL, _IOLBF, 0);
     nread = 0;
     while (argv[1][nread] != '\0') {
         if ((argv[1][nread] < '0') || (argv[1][nread] > '9')) {
